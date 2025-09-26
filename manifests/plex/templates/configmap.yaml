@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plex-config
+  namespace: plex
+data:
+  PLEX_CLAIM: "claim-f-LEXHvPexhsJx1J-_NH"
+  ADVERTISE_IP: "http://192.168.86.33:32400"
+  ALLOWED_NETWORKS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
