@@ -1,43 +1,32 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: plex-ingress
-  namespace: plex
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-max-temp-file-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  name: plex-ingress-v2
+  namespace: plex
 spec:
   ingressClassName: nginx
-  tls:
-    - hosts:
-        - kraken-plugins.com
-      secretName: kraken-plugins-tls
   rules:
   - host: plex.kraken-plugins.com
     http:
       paths:
-      - path: /
-        pathType: Prefix
-        backend:
+      - backend:
           service:
             name: plex-service
             port:
               number: 32400
-  - host: downloader.kraken-plugins.com
-    http:
-      paths:
-      - path: /
+        path: /
         pathType: Prefix
-        backend:
-          service:
-            name: music-downloader-service
-            port:
-              number: 5000
+  tls:
+  - hosts:
+    - plex.kraken-plugins.com
+    secretName: plex-kraken-plugins-tls

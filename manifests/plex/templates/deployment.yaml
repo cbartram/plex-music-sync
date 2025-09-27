@@ -13,6 +13,8 @@ spec:
       labels:
         app: plex-server
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: ip-192-168-86-33
       containers:
       - name: plex
         image: plexinc/pms-docker:latest
@@ -63,6 +65,8 @@ spec:
         volumeMounts:
         - name: plex-config-volume
           mountPath: /config
+        - name: plex-transcode-volume
+          mountPath: /transcode
         - name: music-library
           mountPath: /music
         resources:
@@ -74,6 +78,8 @@ spec:
             cpu: "2"
       volumes:
       - name: plex-config-volume
+        emptyDir: {}
+      - name: plex-transcode-volume
         emptyDir: {}
       - name: music-library
         persistentVolumeClaim:
