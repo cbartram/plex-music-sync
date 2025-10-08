@@ -45,8 +45,8 @@ spec:
         env:
         - name: PLEX_CLAIM
           valueFrom:
-            configMapKeyRef:
-              name: plex-config
+            secretKeyRef:
+              name: plex-secrets
               key: PLEX_CLAIM
         - name: ADVERTISE_IP
           valueFrom:
