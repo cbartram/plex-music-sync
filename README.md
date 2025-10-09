@@ -12,6 +12,32 @@ To upgrade the chart if it's modified use:
 
 `helm upgrade plex ./manifests/plex -f ./manifests/plex/values.yaml -n plex`
 
+## Adding Music
+
+Music is stored on the PVC attached to the plex server under the `/music` directory. Music within Plex needs to be organized
+in the following format:
+
+- `Artist/Album/Song.mp3`
+
+To add Music it's recommended to use the [SpotDL tool](https://github.com/spotDL/spotify-downloader) to download songs and playlists from
+Spotify to a directory on your local device. These will be the raw MP3 files for the songs, however, they also contain the required metadata
+to refine the music into the Plex required format.
+
+Run the `reformat_music.ps1` powershell script to convert the raw MP3 files into the required directory structure. The script
+is safe to run on a target directory which already has files. i.e. You added music previously and are appending additional songs in plex
+format to the same directory. 
+
+Once you have the songs in Plex format upload them to the PVC using:
+
+`kubectl cp <local-dir> <plex-server-pod>:/music`
+
+You can check the status of the music transfer with: 
+
+`keti <plex-pod> -- ls /music`
+
+> :warning: Note: the previous command will take a **long** time to complete as it tar's the file copies it and untar's in at the destination
+> expect it to take an hour or two if you have 2000+ songs to copy. It gives no indication of progress or time till completion. 
+
 ## Claim Code
 
 Within the plex server there is a claim code which needs to be refreshed when the server goes offline. The code expires
@@ -28,9 +54,9 @@ You can rollout the deployment to use the new secret with:
 To update the secret value with the new claim code use:
 
 ```shell
-kubectl patch secret plex-config -n plex \
+kubectl patch secret plex-secrets -n plex \
   --type merge \
-  -p '{"stringData":{"PLEX_CLAIM":"YOUR-NEW-CODE-HERE"}}'
+  -p '{"stringData":{"PLEX_CLAIM":"YOUR_CLAIM_CODE"}}'
 
 kubectl rollout restart deployment plex-server -n plex
 ```
