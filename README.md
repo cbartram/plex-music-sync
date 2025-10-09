@@ -12,6 +12,13 @@ To upgrade the chart if it's modified use:
 
 `helm upgrade plex ./manifests/plex -f ./manifests/plex/values.yaml -n plex`
 
+### Remote Access
+
+Once the server is deployed make sure to go to the `Remote Access` section and enable the port `32400` as it should be 
+port forwarded on the router. This allows you to access the Plex server from outside your home network.
+
+![plex-remote-access](resources/images/plex-remote-access.png)
+
 ## Adding Music
 
 Music is stored on the PVC attached to the plex server under the `/music` directory. Music within Plex needs to be organized
