@@ -1,0 +1,80 @@
+replicaCount: 1
+
+image:
+  repository: cbartram/spotify-plex-sync
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+namespace: plex
+
+podAnnotations: {}
+podLabels:
+  app: spotify-plex-sync
+
+nodeSelector:
+  kubernetes.io/hostname: ip-192-168-86-33
+
+tolerations: []
+affinity: {}
+
+containerPort: 8000
+
+env:
+  musicDir: /music
+  spotdlPath: /app/spotdl-4.4.3-linux
+
+volumes:
+  music:
+    mountPath: /music
+    existingPvc: plex-music-pvc
+
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+podSecurityContext:
+ fsGroup: 2000
+
+securityContext:
+ capabilities:
+   drop:
+   - ALL
+ readOnlyRootFilesystem: true
+ runAsNonRoot: true
+ runAsUser: 1000
+
+livenessProbe:
+ httpGet:
+   path: /health
+   port: web
+ initialDelaySeconds: 30
+ periodSeconds: 10
+
+readinessProbe:
+ httpGet:
+   path: /ready
+   port: web
+ initialDelaySeconds: 5
+ periodSeconds: 5
+
+# Service account (optional)
+serviceAccount:
+  create: false
+  annotations: {}
+  name: ""
+
+# Autoscaling (optional, disabled by default)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80

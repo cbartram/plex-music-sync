@@ -48,13 +48,13 @@ export default function SpotifyPlexApp() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         <div className="bg-slate-800/50 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-slate-700">
           <div className="flex items-center justify-center mb-8">
             <Music className="w-12 h-12 text-green-500 mr-3" />
             <h1 className="text-4xl font-bold text-white">
-              Spotify to Plex
+              Spotify Plex Sync
             </h1>
           </div>
 

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: spotify-plex-sync-svc
+  namespace: plex
+spec:
+  type: NodePort
+  ports:
+  - port: 8000
+    targetPort: 8000
+    nodePort: 30008
+    name: plex-spotify-sync
+  selector:
+    app: spotify-plex-sync
