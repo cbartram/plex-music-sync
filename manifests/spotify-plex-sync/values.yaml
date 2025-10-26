@@ -26,6 +26,7 @@ containerPort: 8000
 env:
   musicDir: /music
   spotdlPath: /app/spotdl-4.4.3-linux
+  staticDir: /app/static
 
 volumes:
   music:
@@ -60,21 +61,7 @@ livenessProbe:
 
 readinessProbe:
  httpGet:
-   path: /ready
+   path: /health
    port: web
- initialDelaySeconds: 5
+ initialDelaySeconds: 3
  periodSeconds: 5
-
-# Service account (optional)
-serviceAccount:
-  create: false
-  annotations: {}
-  name: ""
-
-# Autoscaling (optional, disabled by default)
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80

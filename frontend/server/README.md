@@ -1,4 +1,4 @@
-# Plex Stbc Downloader
+# Plex Spotify Downloader
 
 A Kubernetes-native application that downloads Spotify songs and playlists to your Plex music library using SpotDL.
 Architecture
@@ -8,27 +8,15 @@ Architecture
 - Deployment: Kubernetes with Helm charts
 - Storage: Shared PVC with existing Plex server
 
-## Prerequisites
 
-Kubernetes cluster with existing Plex deployment
-Helm 3.x
-Docker for building images
-Container registry (Docker Hub, Harbor, etc.)
+```shell
+SPOTDL_PATH=./bin/spotdl-4.4.3-win32.exe
+STATIC_DIR=../dist
 
-# Check services
+python3 -m main
 
-`kubectl get svc -n plex`
-
-# Check ingress
-
-`kubectl get ingress -n plex`
-
-# Check backend health
-
-```
-kubectl port-forward -n plex svc/spotify-plex-backend 8000:8000
-curl http://localhost:8000/health
-```
+# Server available on http://localhost:8000
+````
 
 ## Usage
 

@@ -57,6 +57,8 @@ spec:
           value: {{ .Values.env.musicDir | quote }}
         - name: SPOTDL_PATH
           value: {{ .Values.env.spotdlPath | quote }}
+        - name: STATIC_DIR
+          value: {{ .Values.env.staticDir | quote }}
         volumeMounts:
         - name: music-library
           mountPath: {{ .Values.volumes.music.mountPath }}

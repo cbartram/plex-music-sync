@@ -23,10 +23,9 @@ app.add_middleware(
 )
 
 # Configuration
-MUSIC_DIR = os.getenv("MUSIC_DIR", "/music")
+MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
 SPOTDL_PATH = os.getenv("SPOTDL_PATH", "/app/spotdl-4.4.3-linux")
-STATIC_DIR = "/app/static"
-
+STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
 
 class SpotifyRequest(BaseModel):
     spotify_url: str
