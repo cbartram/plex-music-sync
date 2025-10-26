@@ -45,16 +45,19 @@ async def health_check():
 
 def check_spotdl_available():
     """Check if spotdl is available"""
+    result = ""
     try:
+        # TODO This times out or something?!
         result = subprocess.run(
             [SPOTDL_PATH, "--version"],
             capture_output=True,
             text=True,
             timeout=5
         )
+        logger.info("SpotDL version check output: " + result.stdout.strip())
         return result.returncode == 0
     except Exception as e:
-        logger.error(f"SpotDL check failed: {e}")
+        logger.error(f"SpotDL check failed: {e}, output = {result.stdout.strip()}")
         return False
 
 
@@ -72,8 +75,6 @@ async def download_spotify_content(spotify_url: str):
             "download",
             spotify_url,
             "--output", MUSIC_DIR,
-            "--format", "mp3",
-            "--bitrate", "320k"
         ]
 
         logger.info(f"Executing: {' '.join(cmd)}")
