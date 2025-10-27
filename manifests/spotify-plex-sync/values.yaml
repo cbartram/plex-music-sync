@@ -5,10 +5,6 @@ image:
   pullPolicy: IfNotPresent
   tag: "latest"
 
-imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
-
 namespace: plex
 
 podAnnotations: {}
@@ -25,7 +21,6 @@ containerPort: 8000
 
 env:
   musicDir: /music
-  spotdlPath: /app/spotdl-4.4.3-linux
   staticDir: /app/static
 
 volumes:
