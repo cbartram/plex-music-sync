@@ -5,7 +5,8 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y && \
     ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    npm run build
 
 COPY server/requirements.txt .
 COPY server/main.py .
