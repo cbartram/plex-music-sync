@@ -1,4 +1,4 @@
-uvicorn~=0.38.0
-fastapi~=0.120.0
+uvicorn==0.23.2
+fastapi==0.103.0
 pydantic~=2.12.3
 spotdl~=4.4.3
