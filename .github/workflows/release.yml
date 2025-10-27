@@ -42,9 +42,11 @@ jobs:
           cache-dependency-path: './frontend/package-lock.json'
 
       - name: Install dependencies
+        working-directory: ./frontend
         run: npm install
 
       - name: Build React app
+        working-directory: ./frontend
         run: npm run build
 
       - name: Set up Docker Buildx
