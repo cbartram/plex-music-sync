@@ -12,9 +12,9 @@ COPY package.json tsconfig.app.json tsconfig.json tsconfig.node.json vite.config
 COPY public/ ./public/
 COPY src/ ./src/
 
-RUN npm install && npm run build
-
-COPY dist/ /app/static/
+RUN npm install && \
+    npm run build && \
+    mv /app/dist /app/static
 
 RUN chmod -R 755 /app/static &&  \
     pip install --no-cache-dir -r requirements.txt && \
