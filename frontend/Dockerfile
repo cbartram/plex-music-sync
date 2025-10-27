@@ -7,13 +7,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY server/requirements.txt .
-COPY server/bin/spotdl-4.4.3-linux .
 COPY server/main.py .
 COPY dist/ /app/static/
 
-RUN chmod -R 755 /app/static && pip install --no-cache-dir -r requirements.txt
-
-RUN mkdir -p /music
+RUN chmod -R 755 /app/static &&  \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install spotdl && \
+    mkdir -p /music
 
 EXPOSE 8000
 

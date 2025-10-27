@@ -7,6 +7,7 @@ import subprocess
 import logging
 import os
 from pathlib import Path
+from spotdl import Spotdl
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ app.add_middleware(
 MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
 SPOTDL_PATH = os.getenv("SPOTDL_PATH", "/app/spotdl-4.4.3-linux")
 STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+client = Spotdl(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
 
 class SpotifyRequest(BaseModel):
     spotify_url: str
@@ -35,30 +39,13 @@ class SpotifyRequest(BaseModel):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    from spotdl._version import __version__
     return {
         "status": "healthy",
         "music_dir": MUSIC_DIR,
         "music_dir_exists": os.path.exists(MUSIC_DIR),
-        "spotdl_available": check_spotdl_available()
+        "spotdl_version": __version__
     }
-
-
-def check_spotdl_available():
-    """Check if spotdl is available"""
-    result = ""
-    try:
-        # TODO This times out or something?!
-        result = subprocess.run(
-            [SPOTDL_PATH, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        logger.info("SpotDL version check output: " + result.stdout.strip())
-        return result.returncode == 0
-    except Exception as e:
-        logger.error(f"SpotDL check failed: {e}, output = {result.stdout.strip()}")
-        return False
 
 
 async def download_spotify_content(spotify_url: str):
@@ -70,30 +57,12 @@ async def download_spotify_content(spotify_url: str):
         Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
 
         # Run spotdl
-        cmd = [
-            SPOTDL_PATH,
-            "download",
-            spotify_url,
-            "--output", MUSIC_DIR,
-        ]
+        songs = client.search([spotify_url])
+        logger.info(f"Found {len(songs)} songs for URL: {spotify_url}")
+        results = client.download_songs(songs)
+        logger.info(f"Results: {results}")
 
-        logger.info(f"Executing: {' '.join(cmd)}")
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=3600  # 1 hour timeout
-        )
-
-        if result.returncode == 0:
-            logger.info(f"Download completed successfully: {spotify_url}")
-            logger.info(f"Output: {result.stdout}")
-        else:
-            logger.error(f"Download failed: {result.stderr}")
-
-    except subprocess.TimeoutExpired:
-        logger.error(f"Download timeout for: {spotify_url}")
+        # TODO Organize into plex format and store in PVC dir.
     except Exception as e:
         logger.error(f"Download error: {str(e)}")
 
@@ -110,12 +79,6 @@ async def download_spotify(
         raise HTTPException(
             status_code=400,
             detail="Invalid Spotify URL. Must be a spotify.com link."
-        )
-
-    if not check_spotdl_available():
-        raise HTTPException(
-            status_code=503,
-            detail="SpotDL is not available. Please check the backend configuration."
         )
 
     if not os.path.exists(MUSIC_DIR):
@@ -170,4 +133,9 @@ async def serve_spa(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
+
+    if not CLIENT_ID or not CLIENT_SECRET:
+        logger.error("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in environment variables.")
+        exit(1)
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
