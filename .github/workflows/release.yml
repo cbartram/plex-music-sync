@@ -102,6 +102,7 @@ jobs:
           argocd app set ${{ env.ARGOCD_APP_NAME }} \
             -p image.tag=$VERSION_TAG \
             --grpc-web
+          echo "Starting Sync: $VERSION_TAG"
           argocd app sync ${{ env.ARGOCD_APP_NAME }} --grpc-web --prune
 
       - name: Wait for deployment
