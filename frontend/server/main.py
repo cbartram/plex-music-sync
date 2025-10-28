@@ -1,13 +1,15 @@
+import os
+import asyncio
+import logging
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import subprocess
-import logging
-import os
 from pathlib import Path
 from spotdl import Spotdl
+from spotdl.types.options import DownloaderOptions
+from virtualenv.discovery.windows.pep514 import LOGGER
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,15 +27,37 @@ app.add_middleware(
 
 # Configuration
 MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
-SPOTDL_PATH = os.getenv("SPOTDL_PATH", "/app/spotdl-4.4.3-linux")
 STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
-CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-client = Spotdl(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
+
+client = Spotdl(
+    client_id=os.getenv("SPOTIFY_CLIENT_ID", "DEFAULT_CLIENT_ID"),
+    client_secret=os.getenv("SPOTIFY_CLIENT_SECRET", "DEFAULT_CLIENT_SECRET"),
+    downloader_settings=DownloaderOptions(
+        output="{artists}/{album}/{title}.{output-ext}",
+        threads=4,
+        max_retries=5,
+    )
+)
 
 class SpotifyRequest(BaseModel):
     spotify_url: str
 
+
+def register_log_filter() -> None:
+    """
+    Removes logs from healthiness/readiness endpoints so they don't spam
+    and pollute application log flow
+    """
+
+    class EndpointFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return (
+                record.args
+                and len(record.args) >= 3
+                and record.args[2] not in ["/_/health", "/_/ready"]
+            )
+
+    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 # API Routes
 @app.get("/health")
@@ -46,25 +70,6 @@ async def health_check():
         "music_dir_exists": os.path.exists(MUSIC_DIR),
         "spotdl_version": __version__
     }
-
-
-async def download_spotify_content(spotify_url: str):
-    """Background task to download Spotify content"""
-    try:
-        logger.info(f"Starting download for: {spotify_url}")
-
-        # Ensure music directory exists
-        Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
-
-        # Run spotdl
-        songs = client.search([spotify_url])
-        logger.info(f"Found {len(songs)} songs for URL: {spotify_url}")
-        results = client.download_songs(songs)
-        logger.info(f"Results: {results}")
-
-        # TODO Organize into plex format and store in PVC dir.
-    except Exception as e:
-        logger.error(f"Download error: {str(e)}")
 
 
 @app.post("/api/download")
@@ -131,11 +136,60 @@ async def serve_spa(full_path: str):
     raise HTTPException(status_code=404, detail="Not found")
 
 
+async def download_spotify_content(spotify_url: str, max_attempts=3):
+    """Background task to download Spotify content with retry logic"""
+    for attempt in range(max_attempts):
+        try:
+            logger.info(f"Starting download for: {spotify_url} (Attempt {attempt + 1}/{max_attempts})")
+
+            # Ensure music directory exists
+            Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
+
+            # Add delay between attempts to respect rate limits
+            if attempt > 0:
+                wait_time = 2 ** attempt  # Exponential backoff: 2, 4, 8 seconds
+                logger.info(f"Waiting {wait_time} seconds before retry...")
+                await asyncio.sleep(wait_time)
+
+            # Run spotdl
+            songs = client.search([spotify_url])
+            logger.info(f"Found {len(songs)} songs for URL: {spotify_url}")
+
+            # Download with the formatted output
+            results, errors = client.download_songs(songs)
+
+            logger.info(f"Successfully downloaded {len(results)} songs")
+            if errors:
+                logger.warning(f"Errors encountered: {errors}")
+
+            return results
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Download error (attempt {attempt + 1}): {error_msg}")
+
+            # Check if it's a rate limit error
+            if "429" in error_msg or "rate" in error_msg.lower():
+                if attempt < max_attempts - 1:
+                    # Wait longer for rate limit errors
+                    wait_time = 60 * (attempt + 1)  # 60, 120, 180 seconds
+                    logger.info(f"Rate limit hit. Waiting {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
+                    continue
+
+            # If it's the last attempt or not a rate limit error, raise
+            if attempt == max_attempts - 1:
+                raise
+    return None
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    if not CLIENT_ID or not CLIENT_SECRET:
+    if not os.getenv("SPOTIFY_CLIENT_ID") or not os.getenv("SPOTIFY_CLIENT_SECRET"):
         logger.error("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in environment variables.")
         exit(1)
 
+    logger.info("Starting API")
+    register_log_filter()
     uvicorn.run(app, host="0.0.0.0", port=8000)
