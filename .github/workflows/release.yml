@@ -99,17 +99,14 @@ jobs:
             --grpc-web \
             --grpc-web-root-path /argocd
 
-      - name: Update ArgoCD application
+      - name: Sync ArgoCD application
         run: |
           VERSION_TAG="${{ needs.build-and-push.outputs.version_tag }}"
           echo "Deploying version: $VERSION_TAG"
           argocd app set ${{ env.ARGOCD_APP_NAME }} \
             -p image.tag=$VERSION_TAG \
             --grpc-web
-
-      - name: Sync ArgoCD application
-        run: |
-          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune
+          argocd app sync ${{ env.ARGOCD_APP_NAME }} --grpc-web --prune
 
       - name: Wait for deployment
         run: |
