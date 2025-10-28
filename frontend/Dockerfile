@@ -7,12 +7,23 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY server/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY server/main.py .
 COPY dist/ ./static/
 
-RUN chmod -R 755 /app/static && \
-    pip install --no-cache-dir -r requirements.txt && \
-    mkdir -p /music
+RUN chmod -R 755 /app/static
+
+RUN --mount=type=secret,id=cookies \
+    if [ -f /run/secrets/cookies ]; then \
+        cat /run/secrets/cookies > /app/cookies.txt && \
+        chmod 600 /app/cookies.txt && \
+        echo "Cookies file created successfully"; \
+    else \
+        echo "Warning: No cookies secret provided"; \
+    fi
+
+RUN mkdir -p /music
 
 EXPOSE 8000
 

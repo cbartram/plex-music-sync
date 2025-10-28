@@ -69,6 +69,8 @@ jobs:
             ${{ env.DOCKER_IMAGE }}:${{ steps.set_version.outputs.version_tag }}
           cache-from: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache,mode=max
+          secrets: |
+            cookies=${{ secrets.YOUTUBE_COOKIES }}
 
   deploy:
     environment: prod

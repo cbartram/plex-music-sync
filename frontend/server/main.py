@@ -1,10 +1,12 @@
 import os
 import asyncio
 import logging
+import time
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+import uvicorn
 from pydantic import BaseModel
 from pathlib import Path
 from spotdl import Spotdl
@@ -14,33 +16,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Plex Sync API", version="1.0.0")
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Configuration
-MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
-STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
-
-client = Spotdl(
-    client_id=os.getenv("SPOTIFY_CLIENT_ID", "DEFAULT_CLIENT_ID"),
-    client_secret=os.getenv("SPOTIFY_CLIENT_SECRET", "DEFAULT_CLIENT_SECRET"),
-    downloader_settings=DownloaderOptions(
-        output="{artists}/{album}/{title}.{output-ext}",
-        threads=4,
-        max_retries=5,
-    )
-)
-
-class SpotifyRequest(BaseModel):
-    spotify_url: str
-
 
 def register_log_filter() -> None:
     """
@@ -57,6 +32,25 @@ def register_log_filter() -> None:
             )
 
     logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
+register_log_filter()
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configuration
+MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
+STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
+
+class SpotifyRequest(BaseModel):
+    spotify_url: str
+
 
 # API Routes
 @app.get("/health")
@@ -134,61 +128,83 @@ async def serve_spa(full_path: str):
 
     raise HTTPException(status_code=404, detail="Not found")
 
+def read_cookies_files() -> None:
+    try:
+        with open('/app/cookies.txt', 'r') as file:
+            return file.read()
+    except FileNotFoundError:
+        logger.error("Error: The /app/cookies.txt file was not found.")
+    except Exception as e:
+        logger.error(f"An error occurred while attempting to read the cookie file: {e}")
+    return None
 
-async def download_spotify_content(spotify_url: str, max_attempts=3):
+
+def download_spotify_content(spotify_url: str, max_attempts: int = 3):
     """Background task to download Spotify content with retry logic"""
+    # Create a new event loop for this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    cookies = read_cookies_files()
+
+    if cookies is None:
+        logger.error("Failed to read cookies.txt file contents. Skipping download.")
+        return None
+
+    # Create a new client instance with this loop
+    client = Spotdl(
+        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+        client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+        downloader_settings=DownloaderOptions(
+            output="{artists}/{album}/{title}.{output-ext}",
+            threads=4,
+            max_retries=5,
+            cookie_file=cookies,
+        ),
+        loop=loop,
+    )
+
     for attempt in range(max_attempts):
         try:
             logger.info(f"Starting download for: {spotify_url} (Attempt {attempt + 1}/{max_attempts})")
 
-            # Ensure music directory exists
             Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
 
-            # Add delay between attempts to respect rate limits
             if attempt > 0:
-                wait_time = 2 ** attempt  # Exponential backoff: 2, 4, 8 seconds
+                wait_time = 2 ** attempt
                 logger.info(f"Waiting {wait_time} seconds before retry...")
-                await asyncio.sleep(wait_time)
+                time.sleep(wait_time)
 
-            # Run spotdl
             songs = client.search([spotify_url])
             logger.info(f"Found {len(songs)} songs for URL: {spotify_url}")
-
-            # Download with the formatted output
-            results, errors = client.download_songs(songs)
-
+            results = client.download_songs(songs)
             logger.info(f"Successfully downloaded {len(results)} songs")
-            if errors:
-                logger.warning(f"Errors encountered: {errors}")
 
+            loop.close()
             return results
-
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Download error (attempt {attempt + 1}): {error_msg}")
 
-            # Check if it's a rate limit error
             if "429" in error_msg or "rate" in error_msg.lower():
                 if attempt < max_attempts - 1:
-                    # Wait longer for rate limit errors
-                    wait_time = 60 * (attempt + 1)  # 60, 120, 180 seconds
+                    wait_time = 60 * (attempt + 1)
                     logger.info(f"Rate limit hit. Waiting {wait_time} seconds...")
-                    await asyncio.sleep(wait_time)
+                    time.sleep(wait_time)
                     continue
 
-            # If it's the last attempt or not a rate limit error, raise
             if attempt == max_attempts - 1:
+                loop.close()
                 raise
+
+    loop.close()
     return None
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     if not os.getenv("SPOTIFY_CLIENT_ID") or not os.getenv("SPOTIFY_CLIENT_SECRET"):
         logger.error("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in environment variables.")
         exit(1)
 
     logger.info("Starting API")
-    register_log_filter()
     uvicorn.run(app, host="0.0.0.0", port=8000)
