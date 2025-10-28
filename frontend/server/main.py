@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from pathlib import Path
 from spotdl import Spotdl
 from spotdl.types.options import DownloaderOptions
-from virtualenv.discovery.windows.pep514 import LOGGER
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
