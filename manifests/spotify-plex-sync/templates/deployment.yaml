@@ -49,6 +49,8 @@ spec:
           value: {{ .Values.env.spotdlPath | quote }}
         - name: STATIC_DIR
           value: {{ .Values.env.staticDir | quote }}
+        - name: COOKIES_FILE
+          value: {{ .Values.env.cookiesFile | quote }}
         - name: SPOTIFY_CLIENT_ID
           valueFrom:
             secretKeyRef:

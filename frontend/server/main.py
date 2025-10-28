@@ -15,6 +15,10 @@ from spotdl.types.options import DownloaderOptions
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Configuration
+MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
+STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
+COOKIES_FILE = os.getenv("COOKIES_FILE", "/app/cookies.txt")
 app = FastAPI(title="Plex Sync API", version="1.0.0")
 
 def register_log_filter() -> None:
@@ -26,9 +30,9 @@ def register_log_filter() -> None:
     class EndpointFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
             return (
-                record.args
-                and len(record.args) >= 3
-                and record.args[2] not in ["/_/health", "/_/ready"]
+                    record.args
+                    and len(record.args) >= 3
+                    and record.args[2] not in ["/health", "/ready"]
             )
 
     logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
@@ -44,9 +48,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration
-MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
-STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
 
 class SpotifyRequest(BaseModel):
     spotify_url: str
@@ -130,7 +131,7 @@ async def serve_spa(full_path: str):
 
 def read_cookies_files() -> None:
     try:
-        with open('/app/cookies.txt', 'r') as file:
+        with open(COOKIES_FILE, 'r') as file:
             return file.read()
     except FileNotFoundError:
         logger.error("Error: The /app/cookies.txt file was not found.")
@@ -151,15 +152,19 @@ def download_spotify_content(spotify_url: str, max_attempts: int = 3):
         logger.error("Failed to read cookies.txt file contents. Skipping download.")
         return None
 
+    # TODO Need to generate this
+    po_token = ""
+
     # Create a new client instance with this loop
     client = Spotdl(
         client_id=os.getenv("SPOTIFY_CLIENT_ID"),
         client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
         downloader_settings=DownloaderOptions(
-            output="{artists}/{album}/{title}.{output-ext}",
+            output=MUSIC_DIR + "/{artists}/{album}/{title}.{output-ext}",
             threads=4,
             max_retries=5,
             cookie_file=cookies,
+            yt_dlp_args=f"--extractor-args \"youtube:player_client=web_music,default;po_token=web_music+{po_token}\""
         ),
         loop=loop,
     )
@@ -167,7 +172,6 @@ def download_spotify_content(spotify_url: str, max_attempts: int = 3):
     for attempt in range(max_attempts):
         try:
             logger.info(f"Starting download for: {spotify_url} (Attempt {attempt + 1}/{max_attempts})")
-
             Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
 
             if attempt > 0:

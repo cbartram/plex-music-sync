@@ -22,6 +22,7 @@ containerPort: 8000
 env:
   musicDir: /music
   staticDir: /app/static
+  cookiesFile: /app/cookies.txt
 
 volumes:
   music:
