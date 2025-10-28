@@ -58,10 +58,6 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Clear Docker cache
-        run: |
-          docker buildx prune -af
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
