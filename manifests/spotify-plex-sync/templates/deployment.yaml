@@ -56,7 +56,7 @@ spec:
               key: CLIENT_ID
         - name: SPOTIFY_CLIENT_SECRET
           valueFrom:
-            - secretKeyRef:
+            secretKeyRef:
                 name: spotify-plex-sync-secrets
                 key: CLIENT_SECRET
         volumeMounts:
