@@ -56,11 +56,11 @@ class SpotifyRequest(BaseModel):
     spotify_url: str
 
 
-async def get_spotdl_client():
+def get_or_create_spotdl_client():
     """Get or create a singleton Spotdl client"""
     global _spotdl_client
 
-    async with _client_lock:
+    with _client_lock:
         if _spotdl_client is None:
             cookies = read_cookies_files()
             if cookies is None:
@@ -170,7 +170,7 @@ def download_spotify_content(spotify_url: str, max_attempts: int = 3):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    client = loop.run_until_complete(get_spotdl_client())
+    client = get_or_create_spotdl_client()
 
     for attempt in range(max_attempts):
         try:
