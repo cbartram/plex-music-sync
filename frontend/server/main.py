@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pathlib import Path
 from spotdl import Spotdl
 from spotdl.types.options import DownloaderOptions
+import threading
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
 COOKIES_FILE = os.getenv("COOKIES_FILE", "/app/cookies.txt")
 
 _spotdl_client = None
-_client_lock = asyncio.Lock()
+_client_lock = threading.Lock()
 app = FastAPI(title="Plex Sync API", version="1.0.0")
 
 def register_log_filter() -> None:
