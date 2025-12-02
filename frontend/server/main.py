@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
 STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
 COOKIES_FILE = os.getenv("COOKIES_FILE", "/app/cookies.txt")
+
+_spotdl_client = None
+_client_lock = asyncio.Lock()
 app = FastAPI(title="Plex Sync API", version="1.0.0")
 
 def register_log_filter() -> None:
@@ -51,6 +54,32 @@ app.add_middleware(
 
 class SpotifyRequest(BaseModel):
     spotify_url: str
+
+
+async def get_spotdl_client():
+    """Get or create a singleton Spotdl client"""
+    global _spotdl_client
+
+    async with _client_lock:
+        if _spotdl_client is None:
+            cookies = read_cookies_files()
+            if cookies is None:
+                raise Exception("Failed to read cookies.txt file contents.")
+
+            po_token = ""  # TODO Need to generate this
+
+            _spotdl_client = Spotdl(
+                client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+                client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+                downloader_settings=DownloaderOptions(
+                    output=MUSIC_DIR + "/{artists}/{album}/{title}.{output-ext}",
+                    threads=4,
+                    cookie_file=cookies,
+                    yt_dlp_args=f"--extractor-args \"youtube:player_client=web_music,default;po_token=web_music+{po_token}\""
+                ),
+            )
+
+        return _spotdl_client
 
 
 # API Routes
@@ -146,28 +175,7 @@ def download_spotify_content(spotify_url: str, max_attempts: int = 3):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    cookies = read_cookies_files()
-
-    if cookies is None:
-        logger.error("Failed to read cookies.txt file contents. Skipping download.")
-        return None
-
-    # TODO Need to generate this
-    po_token = ""
-
-    # Create a new client instance with this loop
-    client = Spotdl(
-        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-        downloader_settings=DownloaderOptions(
-            output=MUSIC_DIR + "/{artists}/{album}/{title}.{output-ext}",
-            threads=4,
-            max_retries=5,
-            cookie_file=cookies,
-            yt_dlp_args=f"--extractor-args \"youtube:player_client=web_music,default;po_token=web_music+{po_token}\""
-        ),
-        loop=loop,
-    )
+    client = loop.run_until_complete(get_spotdl_client())
 
     for attempt in range(max_attempts):
         try:
