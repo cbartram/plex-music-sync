@@ -85,13 +85,8 @@ async def get_spotdl_client():
 # API Routes
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    from spotdl._version import __version__
     return {
-        "status": "healthy",
-        "music_dir": MUSIC_DIR,
-        "music_dir_exists": os.path.exists(MUSIC_DIR),
-        "spotdl_version": __version__
+        "status": "ok",
     }
 
 

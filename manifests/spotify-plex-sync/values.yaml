@@ -45,11 +45,11 @@ livenessProbe:
    path: /health
    port: web
  initialDelaySeconds: 30
- periodSeconds: 10
+ periodSeconds: 120
 
 readinessProbe:
  httpGet:
    path: /health
    port: web
  initialDelaySeconds: 3
- periodSeconds: 5
+ periodSeconds: 120
