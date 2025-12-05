@@ -2,9 +2,10 @@ import os
 import asyncio
 import logging
 import time
-# Added Security, Depends, status
+import uuid
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Security, Depends, status
-from fastapi.security import APIKeyHeader  # Added APIKeyHeader
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -28,6 +29,11 @@ API_KEY_NAME = "X-API-Key"
 _spotdl_client = None
 _client_lock = threading.Lock()
 
+# --- JOB STORAGE ---
+# In a production app with multiple replicas, you would use Redis here.
+# For a single pod, this in-memory dict works fine.
+JOBS = {}
+
 app = FastAPI(title="Plex Sync API", version="1.0.0")
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
@@ -40,20 +46,6 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
         detail="Could not validate credentials"
     )
 
-
-def register_log_filter() -> None:
-    class EndpointFilter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            return (
-                    record.args
-                    and len(record.args) >= 3
-                    and record.args[2] not in ["/health", "/ready"]
-            )
-
-    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
-
-
-register_log_filter()
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,8 +66,12 @@ def get_or_create_spotdl_client():
         if _spotdl_client is None:
             cookies = read_cookies_files()
             if cookies is None:
-                raise Exception("Failed to read cookies.txt file contents.")
+                # We log this but don't crash yet, individual jobs will fail gracefully
+                logger.error("Failed to read cookies.txt file contents.")
+
+            # Using empty token if not provided
             po_token = ""
+
             _spotdl_client = Spotdl(
                 client_id=os.getenv("SPOTIFY_CLIENT_ID"),
                 client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
@@ -87,6 +83,22 @@ def get_or_create_spotdl_client():
                 ),
             )
         return _spotdl_client
+
+
+# Helper to log to both system stdout and the specific job storage
+def job_log(job_id: str, message: str, level: str = "INFO"):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    log_entry = f"[{timestamp}] {message}"
+
+    # Update Job Store
+    if job_id in JOBS:
+        JOBS[job_id]["logs"].append(log_entry)
+
+    # Update System Log
+    if level == "ERROR":
+        logger.error(f"[{job_id}] {message}")
+    else:
+        logger.info(f"[{job_id}] {message}")
 
 
 @app.get("/health")
@@ -102,11 +114,7 @@ async def download_spotify(
     """
     Download Spotify track or playlist to Plex music directory
     """
-    if not ("spotify.com" in request.spotify_url):
-        logger.error(f"Invalid Spotify URL received: {request.spotify_url}")
-        pass
-
-    if not ("spotify.com" in request.spotify_url):
+    if "spotify.com" not in request.spotify_url:
         raise HTTPException(status_code=400, detail="Invalid Spotify URL.")
 
     if not os.path.exists(MUSIC_DIR):
@@ -118,14 +126,36 @@ async def download_spotify(
                 detail=f"Cannot access music directory: {str(e)}"
             )
 
-    background_tasks.add_task(download_spotify_content, request.spotify_url)
+    # Generate a new Job ID
+    job_id = str(uuid.uuid4())
+
+    # Initialize Job State
+    JOBS[job_id] = {
+        "status": "processing",
+        "logs": [],
+        "created_at": datetime.now().isoformat(),
+        "url": request.spotify_url
+    }
+
+    background_tasks.add_task(download_spotify_content, job_id, request.spotify_url)
 
     return {
         "status": "started",
-        "message": "Download started. Check logs for progress.",
-        "spotify_url": request.spotify_url,
-        "music_dir": MUSIC_DIR
+        "job_id": job_id,
+        "message": "Download started.",
+        "spotify_url": request.spotify_url
     }
+
+
+@app.get("/api/jobs/{job_id}", dependencies=[Depends(get_api_key)])
+async def get_job_status(job_id: str):
+    """
+    Poll this endpoint to get logs and status
+    """
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return JOBS[job_id]
 
 
 # Mount static files
@@ -142,51 +172,79 @@ async def serve_spa(full_path: str):
     index_path = Path(STATIC_DIR) / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
+    # Don't 404 immediately, try serving index for client-side routing if applicable
+    # or just return 404 if it's clearly a missing asset
+    if "." not in full_path:
+        return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Not found")
 
 
-def read_cookies_files() -> None:
+def read_cookies_files() -> str | None:
     try:
-        with open(COOKIES_FILE, 'r') as file:
-            return file.read()
-    except FileNotFoundError:
-        logger.error("Error: The /app/cookies.txt file was not found.")
+        if os.path.exists(COOKIES_FILE):
+            return COOKIES_FILE  # SpotDL expects a path, not the content string for 'cookie_file'
     except Exception as e:
-        logger.error(f"An error occurred while attempting to read the cookie file: {e}")
+        logger.error(f"Error checking cookie file: {e}")
     return None
 
 
-def download_spotify_content(spotify_url: str, max_attempts: int = 3):
+def download_spotify_content(job_id: str, spotify_url: str, max_attempts: int = 3):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    client = get_or_create_spotdl_client()
 
-    for attempt in range(max_attempts):
-        try:
-            logger.info(f"Starting download for: {spotify_url} (Attempt {attempt + 1}/{max_attempts})")
-            Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
+    try:
+        client = get_or_create_spotdl_client()
+        job_log(job_id, f"Job started for: {spotify_url}")
 
-            if attempt > 0:
-                time.sleep(2 ** attempt)
+        for attempt in range(max_attempts):
+            try:
+                job_log(job_id, f"Starting download (Attempt {attempt + 1}/{max_attempts})")
+                Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
 
-            songs = client.search([spotify_url])
-            logger.info(f"Found {len(songs)} songs for URL: {spotify_url}")
-            results = client.download_songs(songs)
-            logger.info(f"Successfully downloaded {len(results)} songs")
-            loop.close()
-            return results
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Download error: {error_msg}")
-            if "429" in error_msg or "rate" in error_msg.lower():
-                if attempt < max_attempts - 1:
-                    time.sleep(60 * (attempt + 1))
-                    continue
-            if attempt == max_attempts - 1:
+                if attempt > 0:
+                    wait_time = 2 ** attempt
+                    job_log(job_id, f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+
+                job_log(job_id, "Searching for songs...")
+                songs = client.search([spotify_url])
+
+                job_log(job_id, f"Found {len(songs)} songs. Starting download...")
+
+                # SpotDL download_songs returns path list
+                results = client.download_songs(songs)
+
+                job_log(job_id, f"Successfully downloaded {len(results)} songs.")
+
+                # Mark Complete
+                JOBS[job_id]["status"] = "completed"
+                JOBS[job_id]["result"] = f"Downloaded {len(results)} files"
+
                 loop.close()
-                raise
-    loop.close()
-    return None
+                return results
+
+            except Exception as e:
+                error_msg = str(e)
+                job_log(job_id, f"Error: {error_msg}", level="ERROR")
+
+                if "429" in error_msg or "rate" in error_msg.lower():
+                    if attempt < max_attempts - 1:
+                        sleep_time = 60 * (attempt + 1)
+                        job_log(job_id, f"Rate limited. Sleeping {sleep_time}s...")
+                        time.sleep(sleep_time)
+                        continue
+
+                if attempt == max_attempts - 1:
+                    JOBS[job_id]["status"] = "failed"
+                    JOBS[job_id]["error"] = error_msg
+                    loop.close()
+                    raise
+    except Exception as outer_e:
+        JOBS[job_id]["status"] = "failed"
+        job_log(job_id, f"Critical failure: {str(outer_e)}", level="ERROR")
+    finally:
+        if loop.is_running():
+            loop.close()
 
 
 if __name__ == "__main__":

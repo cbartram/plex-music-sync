@@ -1,19 +1,64 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Music, Loader2, CheckCircle, XCircle, Lock } from 'lucide-react';
+import { Music, Loader2, Terminal, CheckCircle, XCircle, Lock } from 'lucide-react';
+
+interface JobStatus {
+  status: 'processing' | 'completed' | 'failed';
+  logs: string[];
+  result?: string;
+  error?: string;
+}
 
 export default function SpotifyPlexApp() {
   const [spotifyUrl, setSpotifyUrl] = useState('');
   const [authKey, setAuthKey] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState({ type: '', message: '' });
+  const [loading, setLoading] = useState(false); // Controls the "Start" button state
+
+  // Job State
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobState, setJobState] = useState<JobStatus | null>(null);
+
+  // UI Refs
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedKey = localStorage.getItem('plex_spotdl_auth_key');
     if (savedKey) setAuthKey(savedKey);
   }, []);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [jobState?.logs]);
+
+  // Polling Logic
+  useEffect(() => {
+    let intervalId: number;
+
+    if (activeJobId && jobState?.status !== 'completed' && jobState?.status !== 'failed') {
+      intervalId = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/jobs/${activeJobId}`, {
+            headers: { 'X-API-Key': authKey }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setJobState(data);
+
+            // If finished, stop loading indicator on button
+            if (data.status === 'completed' || data.status === 'failed') {
+              setLoading(false);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to poll job status");
+        }
+      }, 2000); // Poll every 2 seconds
+    }
+
+    return () => clearInterval(intervalId);
+  }, [activeJobId, jobState?.status, authKey]);
 
   const handleAuthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -24,7 +69,8 @@ export default function SpotifyPlexApp() {
   const handleSubmit = async (e: any) => {
     e.preventDefault();
     setLoading(true);
-    setStatus({ type: '', message: '' });
+    setJobState(null);
+    setActiveJobId(null);
 
     try {
       const response = await fetch('/api/download', {
@@ -40,32 +86,25 @@ export default function SpotifyPlexApp() {
       const data = await response.json();
 
       if (response.ok) {
-        setStatus({
-          type: 'success',
-          message: data.message || 'Download started successfully!',
-        });
+        // Success: Store Job ID to start polling
+        setActiveJobId(data.job_id);
         setSpotifyUrl('');
+        setJobState({ status: 'processing', logs: ['Initializing job...'] });
       } else {
-        // Handle 403 specifically
-        if (response.status === 403) {
-           setStatus({
-            type: 'error',
-            message: 'Invalid Authorization Key',
-          });
-        } else {
-          setStatus({
-            type: 'error',
-            message: data.detail || 'Failed to start download',
-          });
-        }
+        setLoading(false);
+        setJobState({
+            status: 'failed',
+            logs: [],
+            error: data.detail || 'Failed to initiate download'
+        });
       }
     } catch (error) {
-      setStatus({
-        type: 'error',
-        message: 'Failed to connect to backend service',
-      });
-    } finally {
       setLoading(false);
+      setJobState({
+          status: 'failed',
+          logs: [],
+          error: 'Failed to connect to backend service'
+      });
     }
   };
 
@@ -80,12 +119,7 @@ export default function SpotifyPlexApp() {
             </h1>
           </div>
 
-          <p className="text-slate-300 text-center mb-8">
-            Download Spotify songs and playlists directly to your Plex music library
-          </p>
-
           <form onSubmit={handleSubmit} className="space-y-6">
-
             {/* Auth Key Input */}
             <div>
               <label htmlFor="auth-key" className="block text-sm font-medium text-slate-300 mb-2">
@@ -118,20 +152,17 @@ export default function SpotifyPlexApp() {
                 disabled={loading}
                 className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-green-500 focus:ring-green-500"
               />
-              <p className="text-xs text-slate-400 mt-2">
-                Paste a Spotify track or playlist URL
-              </p>
             </div>
 
             <Button
               type="submit"
               disabled={!spotifyUrl || !authKey || loading}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Downloading...
+                  Processing...
                 </>
               ) : (
                 <>
@@ -142,32 +173,45 @@ export default function SpotifyPlexApp() {
             </Button>
           </form>
 
-          {status.message && (
-            <Alert
-              className={`mt-6 ${
-                status.type === 'success'
-                  ? 'bg-green-900/30 border-green-700 text-green-300'
-                  : 'bg-red-900/30 border-red-700 text-red-300'
-              }`}
-            >
-              {status.type === 'success' ? (
-                <CheckCircle className="h-4 w-4" />
-              ) : (
-                <XCircle className="h-4 w-4" />
-              )}
-              <AlertDescription>{status.message}</AlertDescription>
-            </Alert>
+          {/* STATUS & LOGS AREA */}
+          {jobState && (
+            <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+                {/* Status Header */}
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                        <Terminal className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm font-medium text-slate-300">Live Logs</span>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                        {jobState.status === 'processing' && <span className="text-xs text-yellow-400 animate-pulse">Running...</span>}
+                        {jobState.status === 'completed' && <span className="text-xs text-green-400 flex items-center"><CheckCircle className="w-3 h-3 mr-1"/> Done</span>}
+                        {jobState.status === 'failed' && <span className="text-xs text-red-400 flex items-center"><XCircle className="w-3 h-3 mr-1"/> Failed</span>}
+                    </div>
+                </div>
+
+                {/* Log Terminal Window */}
+                <div className="bg-black/80 rounded-lg p-4 font-mono text-sm h-64 overflow-y-auto border border-slate-700 shadow-inner">
+                    <div className="space-y-1">
+                        {jobState.logs.map((log, i) => (
+                            <div key={i} className="text-slate-300 break-all border-l-2 border-slate-800 pl-2 hover:border-slate-600 transition-colors">
+                                <span className="text-green-500/50 mr-2">{'>'}</span>
+                                {log}
+                            </div>
+                        ))}
+                        {jobState.error && (
+                            <div className="text-red-400 font-bold mt-2">
+                                Error: {jobState.error}
+                            </div>
+                        )}
+                        {/* Invisible element to auto-scroll to */}
+                        <div ref={logsEndRef} />
+                    </div>
+                </div>
+            </div>
           )}
 
-          <div className="mt-8 pt-6 border-t border-slate-700">
-            <h3 className="text-sm font-semibold text-slate-300 mb-3">How to use:</h3>
-            <ol className="text-sm text-slate-400 space-y-2">
-              <li>1. Enter the Server Auth Key (saved automatically)</li>
-              <li>2. Copy a Spotify track or playlist URL</li>
-              <li>3. Paste it in the input field above</li>
-              <li>4. Click "Download to Plex"</li>
-            </ol>
-          </div>
         </div>
       </div>
     </div>
