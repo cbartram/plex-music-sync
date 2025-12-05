@@ -1,13 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Music, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Music, Loader2, CheckCircle, XCircle, Lock } from 'lucide-react';
 
 export default function SpotifyPlexApp() {
   const [spotifyUrl, setSpotifyUrl] = useState('');
+  const [authKey, setAuthKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
+
+  useEffect(() => {
+    const savedKey = localStorage.getItem('plex_spotdl_auth_key');
+    if (savedKey) setAuthKey(savedKey);
+  }, []);
+
+  const handleAuthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setAuthKey(value);
+    localStorage.setItem('plex_spotdl_auth_key', value);
+  };
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
@@ -19,7 +31,8 @@ export default function SpotifyPlexApp() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          "Accepts":"application/json"
+          'Accepts': 'application/json',
+          'X-API-Key': authKey
         },
         body: JSON.stringify({ spotify_url: spotifyUrl }),
       });
@@ -33,10 +46,18 @@ export default function SpotifyPlexApp() {
         });
         setSpotifyUrl('');
       } else {
-        setStatus({
-          type: 'error',
-          message: data.detail || 'Failed to start download',
-        });
+        // Handle 403 specifically
+        if (response.status === 403) {
+           setStatus({
+            type: 'error',
+            message: 'Invalid Authorization Key',
+          });
+        } else {
+          setStatus({
+            type: 'error',
+            message: data.detail || 'Failed to start download',
+          });
+        }
       }
     } catch (error) {
       setStatus({
@@ -64,6 +85,26 @@ export default function SpotifyPlexApp() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+
+            {/* Auth Key Input */}
+            <div>
+              <label htmlFor="auth-key" className="block text-sm font-medium text-slate-300 mb-2">
+                Server Auth Key
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input
+                  id="auth-key"
+                  type="password"
+                  placeholder="Enter secret API key..."
+                  value={authKey}
+                  onChange={handleAuthChange}
+                  className="pl-9 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Spotify URL Input */}
             <div>
               <label htmlFor="spotify-url" className="block text-sm font-medium text-slate-300 mb-2">
                 Spotify URL
@@ -71,7 +112,7 @@ export default function SpotifyPlexApp() {
               <Input
                 id="spotify-url"
                 type="text"
-                placeholder="https://open.spotify.com/track/... or playlist/..."
+                placeholder="https://open.spotify.com/track/..."
                 value={spotifyUrl}
                 onChange={(e) => setSpotifyUrl(e.target.value)}
                 disabled={loading}
@@ -84,8 +125,8 @@ export default function SpotifyPlexApp() {
 
             <Button
               type="submit"
-              disabled={!spotifyUrl || loading}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-6 text-lg"
+              disabled={!spotifyUrl || !authKey || loading}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
@@ -121,11 +162,10 @@ export default function SpotifyPlexApp() {
           <div className="mt-8 pt-6 border-t border-slate-700">
             <h3 className="text-sm font-semibold text-slate-300 mb-3">How to use:</h3>
             <ol className="text-sm text-slate-400 space-y-2">
-              <li>1. Copy a Spotify track or playlist URL</li>
-              <li>2. Paste it in the input field above</li>
-              <li>3. Click "Download to Plex"</li>
-              <li>4. Wait for the download to complete</li>
-              <li>5. Refresh your Plex library to see the new music</li>
+              <li>1. Enter the Server Auth Key (saved automatically)</li>
+              <li>2. Copy a Spotify track or playlist URL</li>
+              <li>3. Paste it in the input field above</li>
+              <li>4. Click "Download to Plex"</li>
             </ol>
           </div>
         </div>

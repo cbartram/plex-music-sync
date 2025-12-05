@@ -2,7 +2,9 @@ import os
 import asyncio
 import logging
 import time
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+# Added Security, Depends, status
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Security, Depends, status
+from fastapi.security import APIKeyHeader  # Added APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -20,17 +22,26 @@ logger = logging.getLogger(__name__)
 MUSIC_DIR = os.getenv("MUSIC_DIR", "./music")
 STATIC_DIR = os.getenv("STATIC_DIR", "/app/static")
 COOKIES_FILE = os.getenv("COOKIES_FILE", "/app/cookies.txt")
+APP_AUTH_KEY = os.getenv("APP_AUTH_KEY", "DEFAULT_APP_AUTH_KEY_WILL_NOT_WORK_IN_PROD")
+API_KEY_NAME = "X-API-Key"
 
 _spotdl_client = None
 _client_lock = threading.Lock()
+
 app = FastAPI(title="Plex Sync API", version="1.0.0")
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+
+async def get_api_key(api_key_header: str = Security(api_key_header)):
+    if api_key_header == APP_AUTH_KEY:
+        return api_key_header
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Could not validate credentials"
+    )
+
 
 def register_log_filter() -> None:
-    """
-    Removes logs from healthiness/readiness endpoints so they don't spam
-    and pollute application log flow
-    """
-
     class EndpointFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
             return (
@@ -41,9 +52,9 @@ def register_log_filter() -> None:
 
     logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
+
 register_log_filter()
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -58,17 +69,13 @@ class SpotifyRequest(BaseModel):
 
 
 def get_or_create_spotdl_client():
-    """Get or create a singleton Spotdl client"""
     global _spotdl_client
-
     with _client_lock:
         if _spotdl_client is None:
             cookies = read_cookies_files()
             if cookies is None:
                 raise Exception("Failed to read cookies.txt file contents.")
-
-            po_token = ""  # TODO Need to generate this
-
+            po_token = ""
             _spotdl_client = Spotdl(
                 client_id=os.getenv("SPOTIFY_CLIENT_ID"),
                 client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
@@ -79,19 +86,15 @@ def get_or_create_spotdl_client():
                     yt_dlp_args=f"--extractor-args \"youtube:player_client=web_music,default;po_token=web_music+{po_token}\""
                 ),
             )
-
         return _spotdl_client
 
 
-# API Routes
 @app.get("/health")
 async def health_check():
-    return {
-        "status": "ok",
-    }
+    return {"status": "ok"}
 
 
-@app.post("/api/download")
+@app.post("/api/download", dependencies=[Depends(get_api_key)])
 async def download_spotify(
         request: SpotifyRequest,
         background_tasks: BackgroundTasks
@@ -100,10 +103,11 @@ async def download_spotify(
     Download Spotify track or playlist to Plex music directory
     """
     if not ("spotify.com" in request.spotify_url):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Spotify URL. Must be a spotify.com link."
-        )
+        logger.error(f"Invalid Spotify URL received: {request.spotify_url}")
+        pass
+
+    if not ("spotify.com" in request.spotify_url):
+        raise HTTPException(status_code=400, detail="Invalid Spotify URL.")
 
     if not os.path.exists(MUSIC_DIR):
         try:
@@ -124,35 +128,22 @@ async def download_spotify(
     }
 
 
-# Mount static files for assets (JS, CSS, images, etc.)
-# This must come before the catch-all route
+# Mount static files
 app.mount("/assets", StaticFiles(directory=f"{STATIC_DIR}/assets"), name="assets")
-
-# If you have a docs directory
 if os.path.exists(f"{STATIC_DIR}/docs"):
     app.mount("/docs", StaticFiles(directory=f"{STATIC_DIR}/docs", html=True), name="docs")
 
 
-# Catch-all route for SPA - this must be last
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    """
-    Serve the React SPA for all non-API routes.
-    This enables client-side routing.
-    """
-    # Try to serve the requested file if it exists
     file_path = Path(STATIC_DIR) / full_path
-
-    # If it's a file and exists, serve it
     if file_path.is_file():
         return FileResponse(file_path)
-
-    # Otherwise, serve index.html for SPA routing
     index_path = Path(STATIC_DIR) / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-
     raise HTTPException(status_code=404, detail="Not found")
+
 
 def read_cookies_files() -> None:
     try:
@@ -166,11 +157,8 @@ def read_cookies_files() -> None:
 
 
 def download_spotify_content(spotify_url: str, max_attempts: int = 3):
-    """Background task to download Spotify content with retry logic"""
-    # Create a new event loop for this thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
     client = get_or_create_spotdl_client()
 
     for attempt in range(max_attempts):
@@ -179,39 +167,31 @@ def download_spotify_content(spotify_url: str, max_attempts: int = 3):
             Path(MUSIC_DIR).mkdir(parents=True, exist_ok=True)
 
             if attempt > 0:
-                wait_time = 2 ** attempt
-                logger.info(f"Waiting {wait_time} seconds before retry...")
-                time.sleep(wait_time)
+                time.sleep(2 ** attempt)
 
             songs = client.search([spotify_url])
             logger.info(f"Found {len(songs)} songs for URL: {spotify_url}")
             results = client.download_songs(songs)
             logger.info(f"Successfully downloaded {len(results)} songs")
-
             loop.close()
             return results
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Download error (attempt {attempt + 1}): {error_msg}")
-
+            logger.error(f"Download error: {error_msg}")
             if "429" in error_msg or "rate" in error_msg.lower():
                 if attempt < max_attempts - 1:
-                    wait_time = 60 * (attempt + 1)
-                    logger.info(f"Rate limit hit. Waiting {wait_time} seconds...")
-                    time.sleep(wait_time)
+                    time.sleep(60 * (attempt + 1))
                     continue
-
             if attempt == max_attempts - 1:
                 loop.close()
                 raise
-
     loop.close()
     return None
 
 
 if __name__ == "__main__":
     if not os.getenv("SPOTIFY_CLIENT_ID") or not os.getenv("SPOTIFY_CLIENT_SECRET"):
-        logger.error("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in environment variables.")
+        logger.error("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set")
         exit(1)
 
     logger.info("Starting API")

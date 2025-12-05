@@ -61,6 +61,11 @@ spec:
             secretKeyRef:
                 name: spotify-plex-sync-secrets
                 key: CLIENT_SECRET
+        - name: APP_AUTH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: spotify-plex-sync-app-auth-key
+              key: APP_AUTH_KEY
         volumeMounts:
         - name: music-library
           mountPath: {{ .Values.volumes.music.mountPath }}
