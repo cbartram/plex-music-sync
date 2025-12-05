@@ -1,6 +1,19 @@
-# Plex Sync
+<div align="center">
+  <a href="https://github.com/cbartram/plex-music-sync">
+    <img src="resources/images/logo.png" alt="Logo" width="80" height="80">
+  </a>
+<h1 align="center">Plex Spotify Sync</h3>
 
-A tool which sync's a spotify song, album, or playlist to a plex media server.
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![project_license][license-shield]][license-url]
+[![LinkedIn][linkedin-shield]][linkedin-url]
+<br />
+A tool which sync's a Spotify song, album, or playlist to your plex media server.
+</div>
+
 
 ## Plex Server Deployment
 
@@ -11,6 +24,12 @@ The plex server can be deployed via the helm chart with:
 To upgrade the chart if it's modified use:
 
 `helm upgrade plex ./manifests/plex -f ./manifests/plex/values.yaml -n plex`
+
+
+## CI
+
+The project is configured with a Github actions CI pipeline to automatically build a new docker image, tag it as latest,
+and deploy it via ArgoCD to a kubernetes cluster. The pipeline is triggered on a push to the main branch.
 
 ### Remote Access
 
@@ -92,7 +111,7 @@ repository](https://github.com/cbartram/kraken-loader-plugin/tags).
 - **C. Bartram** - *Initial Project implementation* - [cbartram](https://github.com/cbartram)
 
 See also the list of
-[contributors](https://github.com/PurpleBooth/a-good-readme-template/contributors)
+[contributors](https://github.com/cbartram/plex-music-sync/contributors)
 who participated in this project.
 
 ## License
@@ -100,4 +119,18 @@ who participated in this project.
 This project is licensed under the [CC0 1.0 Universal](LICENSE.md)
 Creative Commons License - see the [LICENSE.md](LICENSE.md) file for
 details
+
+[contributors-shield]: https://img.shields.io/github/contributors/cbartram/plex-music-sync.svg?style=for-the-badge
+[contributors-url]: https://github.com/cbartram/plex-music-sync/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/cbartram/plex-music-sync.svg?style=for-the-badge
+[forks-url]: https://github.com/cbartram/plex-music-sync/network/members
+[stars-shield]: https://img.shields.io/github/stars/cbartram/plex-music-sync.svg?style=for-the-badge
+[stars-url]: https://github.com/cbartram/plex-music-sync/stargazers
+[issues-shield]: https://img.shields.io/github/issues/cbartram/plex-music-sync.svg?style=for-the-badge
+[issues-url]: https://github.com/cbartram/plex-music-sync/issues
+[license-shield]: https://img.shields.io/github/license/cbartram/plex-music-sync.svg?style=for-the-badge
+[license-url]: https://github.com/cbartram/plex-music-sync/blob/master/LICENSE.txt
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+[linkedin-url]: https://linkedin.com/in/linkedin_username
+[logo]: resources/images/logo.png
 
